@@ -1,41 +1,34 @@
 # ───────────────────────────────────────────────────────────────────────────
 # opencode — Home Manager module
 # ───────────────────────────────────────────────────────────────────────────
-# Installs the (overlaid, x86_64 baseline) `opencode` package and drops its
-# config at ~/.config/opencode/opencode.json.
+# Thin wrapper around Home Manager's built-in `programs.opencode`. It:
+#   - enables opencode,
+#   - points it at the x86_64 *baseline* build (via this flake's overlay) so it
+#     also runs on old CPUs without AVX2,
+#   - sets a sensible default: OpenCode's own FREE model (no API key needed).
 #
-# Default model: OpenCode's own FREE model (no API key required):
-#   opencode/deepseek-v4.1-flash-free
-#
-# To add other providers (Anthropic, OpenAI, ...) run:  opencode auth login
+# Run `opencode auth login` to add other providers (Anthropic, OpenAI, ...).
 # ───────────────────────────────────────────────────────────────────────────
 {
-  config,
-  lib,
   pkgs,
+  lib,
   ...
 }:
 let
-  cfg = config.programs.opencode;
+  # Self-contained: apply our own overlay so the module works whether or not the
+  # caller added `overlays.default` to nixpkgs.
+  baseline =
+    if pkgs.stdenv.hostPlatform.isx86_64 then
+      (pkgs.extend (import ./overlay.nix)).opencode
+    else
+      pkgs.opencode;
 in
 {
-  options.programs.opencode = {
-    enable = lib.mkEnableOption "opencode AI coding agent";
-    model = lib.mkOption {
-      type = lib.types.str;
-      default = "opencode/deepseek-v4.1-flash-free";
-      description = "Default model written to opencode.json.";
-    };
-  };
-
-  config = lib.mkIf cfg.enable {
-    home.packages = [ pkgs.opencode ];
-
-    xdg.configFile."opencode/opencode.json".text = builtins.toJSON {
-      "$schema" = "https://opencode.ai/config.json";
-      model = cfg.model;
-      # Nix owns the binary, so disable self-updating (avoids clobbering the
-      # read-only Nix store and version drift).
+  programs.opencode = {
+    enable = true;
+    package = lib.mkDefault baseline;
+    settings = {
+      model = "opencode/deepseek-v4.1-flash-free";
       autoupdate = false;
     };
   };
